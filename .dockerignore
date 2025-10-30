@@ -1,0 +1,10 @@
+/.git
+/.github
+/.vscode
+/bin
+/dist
+/vendor
+*.log
+*.out
+*.test
+docker-compose.yml

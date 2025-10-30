@@ -82,6 +82,55 @@ func TestBuildRelayPayloadFallbacks(t *testing.T) {
 	}
 }
 
+func TestNormaliseStatus(t *testing.T) {
+	testCases := map[string]string{
+		"Clear":   "online",
+		" warning": "warning",
+		"ERROR":   "error",
+		"Offline": "offline",
+		"unknown": "unknown",
+		"":        "",
+	}
+
+	for input, expected := range testCases {
+		if got := normaliseStatus(input); got != expected {
+			t.Fatalf("normaliseStatus(%q) = %q, expected %q", input, got, expected)
+		}
+	}
+}
+
+func TestFormatBitrate(t *testing.T) {
+	if got := formatBitrate(0); got != "" {
+		t.Fatalf("expected empty string, got %q", got)
+	}
+
+	if got := formatBitrate(1024); got != "1024 bps" {
+		t.Fatalf("expected formatted bitrate, got %q", got)
+	}
+}
+
+func TestFirstNonEmpty(t *testing.T) {
+	if got := firstNonEmpty("", " ", "value", "other"); got != "value" {
+		t.Fatalf("expected first non-empty value, got %q", got)
+	}
+
+	if got := firstNonEmpty("", " "); got != "" {
+		t.Fatalf("expected empty string when none provided, got %q", got)
+	}
+}
+
+func TestFindComponent(t *testing.T) {
+	components := []componentPayload{{ContentType: "Audio"}, {ContentType: "Video"}}
+
+	if comp := findComponent(components, "video"); comp == nil || comp.ContentType != "Video" {
+		t.Fatalf("expected to find video component")
+	}
+
+	if comp := findComponent(components, "data"); comp != nil {
+		t.Fatalf("expected nil for unknown component")
+	}
+}
+
 func diffRelayPayload(expected, actual relayPayload) string {
 	if expected == actual {
 		return ""

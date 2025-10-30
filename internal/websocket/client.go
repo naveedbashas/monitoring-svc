@@ -1,11 +1,11 @@
-package main
+package websocket
 
 import (
 	"log"
 	"net/http"
 	"time"
 
-	"github.com/gorilla/websocket"
+	gorilla "github.com/gorilla/websocket"
 )
 
 const (
@@ -15,45 +15,45 @@ const (
 	maxMessageSize = 512
 )
 
-var upgrader = websocket.Upgrader{
+var upgrader = gorilla.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
+	CheckOrigin: func(_ *http.Request) bool {
 		return true
 	},
 }
 
-type Client struct {
+type client struct {
 	hub  *Hub
-	conn *websocket.Conn
+	conn *gorilla.Conn
 	send chan []byte
 }
 
-func newClient(hub *Hub, conn *websocket.Conn) *Client {
-	return &Client{
+func newClient(hub *Hub, conn *gorilla.Conn) *client {
+	return &client{
 		hub:  hub,
 		conn: conn,
 		send: make(chan []byte, 128),
 	}
 }
 
-func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
+func serveWebsocket(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("failed to upgrade websocket: %v", err)
 		return
 	}
 
-	client := newClient(hub, conn)
-	hub.Register(client)
+	c := newClient(hub, conn)
+	hub.registerClient(c)
 
-	go client.writePump()
-	go client.readPump()
+	go c.writePump()
+	go c.readPump()
 }
 
-func (c *Client) readPump() {
+func (c *client) readPump() {
 	defer func() {
-		c.hub.Unregister(c)
+		c.hub.unregisterClient(c)
 		if err := c.conn.Close(); err != nil {
 			log.Printf("error closing websocket connection: %v", err)
 		}
@@ -67,7 +67,7 @@ func (c *Client) readPump() {
 
 	for {
 		if _, _, err := c.conn.ReadMessage(); err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+			if gorilla.IsUnexpectedCloseError(err, gorilla.CloseGoingAway, gorilla.CloseAbnormalClosure) {
 				log.Printf("websocket close error: %v", err)
 			}
 			break
@@ -75,7 +75,7 @@ func (c *Client) readPump() {
 	}
 }
 
-func (c *Client) writePump() {
+func (c *client) writePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
@@ -89,17 +89,17 @@ func (c *Client) writePump() {
 		case message, ok := <-c.send:
 			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
-				_ = c.conn.WriteMessage(websocket.CloseMessage, nil)
+				_ = c.conn.WriteMessage(gorilla.CloseMessage, nil)
 				return
 			}
 
-			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
+			if err := c.conn.WriteMessage(gorilla.TextMessage, message); err != nil {
 				log.Printf("error writing websocket message: %v", err)
 				return
 			}
 		case <-ticker.C:
 			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			if err := c.conn.WriteMessage(gorilla.PingMessage, nil); err != nil {
 				log.Printf("error writing websocket ping: %v", err)
 				return
 			}

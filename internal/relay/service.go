@@ -2,9 +2,7 @@ package relay
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"time"
 
 	"monitoring/internal/pubsub"
 )
@@ -26,21 +24,9 @@ func NewService(bridge Bridge) *Service {
 
 // HandleMessage marshals the Pub/Sub message into JSON and forwards it to connected clients.
 func (s *Service) HandleMessage(ctx context.Context, message pubsub.Message) error {
-	envelope := struct {
-		ID          string            `json:"id"`
-		Data        json.RawMessage   `json:"data"`
-		Attributes  map[string]string `json:"attributes,omitempty"`
-		PublishTime string            `json:"publishTime"`
-	}{
-		ID:          message.ID,
-		Data:        json.RawMessage(message.Data),
-		Attributes:  message.Attributes,
-		PublishTime: message.PublishTime.UTC().Format(time.RFC3339Nano),
-	}
-
-	payload, err := json.Marshal(envelope)
+	payload, err := buildRelayPayload(message)
 	if err != nil {
-		return fmt.Errorf("marshal envelope: %w", err)
+		return fmt.Errorf("build relay payload: %w", err)
 	}
 
 	if err := s.bridge.Publish(ctx, payload); err != nil {

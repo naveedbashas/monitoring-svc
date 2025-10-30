@@ -9,23 +9,23 @@ import (
 	"monitoring/internal/pubsub"
 )
 
-// Broadcaster represents a destination capable of broadcasting messages to clients.
-type Broadcaster interface {
-	Broadcast([]byte) error
+// Bridge represents a component that delivers payloads to downstream consumers.
+type Bridge interface {
+	Publish(context.Context, []byte) error
 }
 
 // Service transforms Pub/Sub messages into websocket payloads and broadcasts them.
 type Service struct {
-	broadcaster Broadcaster
+	bridge Bridge
 }
 
 // NewService constructs a new relay service instance.
-func NewService(broadcaster Broadcaster) *Service {
-	return &Service{broadcaster: broadcaster}
+func NewService(bridge Bridge) *Service {
+	return &Service{bridge: bridge}
 }
 
 // HandleMessage marshals the Pub/Sub message into JSON and forwards it to connected clients.
-func (s *Service) HandleMessage(_ context.Context, message pubsub.Message) error {
+func (s *Service) HandleMessage(ctx context.Context, message pubsub.Message) error {
 	envelope := struct {
 		ID          string            `json:"id"`
 		Data        json.RawMessage   `json:"data"`
@@ -43,8 +43,8 @@ func (s *Service) HandleMessage(_ context.Context, message pubsub.Message) error
 		return fmt.Errorf("marshal envelope: %w", err)
 	}
 
-	if err := s.broadcaster.Broadcast(payload); err != nil {
-		return fmt.Errorf("broadcast message: %w", err)
+	if err := s.bridge.Publish(ctx, payload); err != nil {
+		return fmt.Errorf("publish message: %w", err)
 	}
 
 	return nil

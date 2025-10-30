@@ -30,6 +30,21 @@ func main() {
 	hub := websocket.NewHub()
 	go hub.Run()
 
+	redisBridge, err := relay.NewRedisBridge(ctx, relay.RedisOptions{
+		Addr:     cfg.Redis.Addr,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+		Channel:  cfg.Redis.Channel,
+	})
+	if err != nil {
+		log.Fatalf("failed to initialise redis bridge: %v", err)
+	}
+	defer func() {
+		if err := redisBridge.Close(); err != nil {
+			log.Printf("error closing redis bridge: %v", err)
+		}
+	}()
+
 	psClient, err := gcppubsub.NewClient(ctx, cfg.ProjectID)
 	if err != nil {
 		log.Fatalf("failed to create pubsub client: %v", err)
@@ -44,11 +59,29 @@ func main() {
 		pubsub.WithMaxOutstandingMessages(cfg.MaxOutstandingMessages),
 	)
 
-	relayService := relay.NewService(hub)
+	relayService := relay.NewService(redisBridge)
 
 	go func() {
 		if err := subscriber.Run(ctx, relayService.HandleMessage); err != nil && !errors.Is(err, context.Canceled) {
 			log.Fatalf("pubsub subscriber error: %v", err)
+		}
+	}()
+
+	go func() {
+		err := redisBridge.Run(ctx, func(payload []byte) {
+			if err := hub.Broadcast(payload); err != nil {
+				switch {
+				case errors.Is(err, websocket.ErrBroadcastOverflow):
+					log.Printf("dropping message due to slow websocket consumers: %v", err)
+				case errors.Is(err, websocket.ErrHubClosed):
+					log.Printf("hub closed while broadcasting message: %v", err)
+				default:
+					log.Printf("failed to broadcast redis payload: %v", err)
+				}
+			}
+		})
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Fatalf("redis bridge run error: %v", err)
 		}
 	}()
 

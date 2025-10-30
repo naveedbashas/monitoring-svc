@@ -13,6 +13,9 @@ const (
 	defaultListenAddr            = ":8080"
 	defaultShutdownTimeout       = 10 * time.Second
 	defaultMaxOutstandingMessage = 100
+	defaultRedisAddr             = "localhost:6379"
+	defaultRedisChannel          = "monitoring:relay"
+	defaultRedisDB               = 0
 )
 
 // Config captures runtime configuration for the monitoring service.
@@ -22,6 +25,15 @@ type Config struct {
 	SubscriptionID         string
 	ShutdownTimeout        time.Duration
 	MaxOutstandingMessages int
+	Redis                  RedisConfig
+}
+
+// RedisConfig describes the Redis connection used for cross-instance fan-out.
+type RedisConfig struct {
+	Addr     string
+	Channel  string
+	Password string
+	DB       int
 }
 
 // Load parses configuration from environment variables and command-line flags.
@@ -32,6 +44,12 @@ func Load() (Config, error) {
 		SubscriptionID:         os.Getenv("PUBSUB_SUBSCRIPTION_ID"),
 		ShutdownTimeout:        getEnvDuration("SHUTDOWN_TIMEOUT", defaultShutdownTimeout),
 		MaxOutstandingMessages: getEnvInt("PUBSUB_MAX_OUTSTANDING_MESSAGES", defaultMaxOutstandingMessage),
+		Redis: RedisConfig{
+			Addr:     getEnv("REDIS_ADDR", defaultRedisAddr),
+			Channel:  getEnv("REDIS_CHANNEL", defaultRedisChannel),
+			Password: os.Getenv("REDIS_PASSWORD"),
+			DB:       getEnvInt("REDIS_DB", defaultRedisDB),
+		},
 	}
 
 	fs := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
@@ -40,6 +58,10 @@ func Load() (Config, error) {
 	fs.StringVar(&cfg.SubscriptionID, "subscription", cfg.SubscriptionID, "Pub/Sub subscription ID")
 	fs.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", cfg.ShutdownTimeout, "Graceful shutdown timeout")
 	fs.IntVar(&cfg.MaxOutstandingMessages, "pubsub-max-outstanding", cfg.MaxOutstandingMessages, "Pub/Sub max outstanding messages")
+	fs.StringVar(&cfg.Redis.Addr, "redis-addr", cfg.Redis.Addr, "Redis address (host:port)")
+	fs.StringVar(&cfg.Redis.Channel, "redis-channel", cfg.Redis.Channel, "Redis pub/sub channel for relaying messages")
+	fs.StringVar(&cfg.Redis.Password, "redis-password", cfg.Redis.Password, "Redis password")
+	fs.IntVar(&cfg.Redis.DB, "redis-db", cfg.Redis.DB, "Redis database index")
 
 	fs.SetOutput(os.Stderr)
 	if err := fs.Parse(os.Args[1:]); err != nil {
